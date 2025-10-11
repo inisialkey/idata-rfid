@@ -96,12 +96,27 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
             if (!isScanning || uhfManager == null) return;
 
             try {
-                String[] tags = uhfManager.readTagFromBuffer();
-                if (tags != null && tags.length > 0 && eventSink != null) {
-                    for (String tag : tags) {
-                        if (tag != null && !tag.isEmpty()) {
-                            eventSink.success(tag);
+                String[] tagData = uhfManager.readTagFromBuffer();
+                if (tagData != null && tagData.length >= 3 && eventSink != null) {
+                    try {
+                        // Ambil EPC & RSSI
+                        String epc = tagData[1];
+                        String rssiHex = tagData[2];
+
+                        int rssi = 0;
+                        if (rssiHex != null && rssiHex.length() >= 4) {
+                            int Hb = Integer.parseInt(rssiHex.substring(0, 2), 16);
+                            int Lb = Integer.parseInt(rssiHex.substring(2, 4), 16);
+                            rssi = ((Hb - 256 + 1) * 256 + (Lb - 256)) / 10;
                         }
+
+                        // Kirim hanya tag EPC yang valid
+                        if (epc != null && epc.length() >= 16 && epc.startsWith("E2")) {
+                            eventSink.success(epc + "|" + rssi);
+                        }
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error parsing RSSI: " + e.getMessage());
                     }
                 }
             } catch (Exception e) {

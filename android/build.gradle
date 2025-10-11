@@ -40,10 +40,6 @@ repositories {
 }
 
 dependencies {
-    // include all jar/aar in libs folder
-    // implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
-    // explicitly include the UHF SDK AAR
-    // implementation(name: 'UHFJar_V1.4.06', ext: 'aar')
-    // implementation files('libs/UHFJar_V1.4.06.aar')
     compileOnly fileTree(dir: 'libs', include: ['*.aar'])
+    compileOnly fileTree(dir: 'libs', include: ['*.jar'])
 }

@@ -66,6 +66,8 @@ flutter {
 
 dependencies {
     implementation project(':idata_rfid')
+    implementation files('../../../android/libs/UHFJar_V1.4.06.aar')
+    implementation fileTree(dir: '../../idata_rfid/android/libs', include: ['*.jar'])
 }
 
 // Opsional: masih bisa keep logging path
