@@ -1,0 +1,49 @@
+group = "com.idata_rfid"
+version = "1.0-SNAPSHOT"
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.4.0")
+    }
+}
+
+apply plugin: "com.android.library"
+
+android {
+    namespace = "com.idata_rfid"
+    compileSdk = 34
+
+    defaultConfig {
+        minSdk = 24
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+    }
+
+    sourceSets {
+        main.java.srcDirs += "src/main/java"
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+    flatDir {
+        dirs 'libs'
+    }
+}
+
+dependencies {
+    // include all jar/aar in libs folder
+    // implementation fileTree(dir: 'libs', include: ['*.jar', '*.aar'])
+    // explicitly include the UHF SDK AAR
+    // implementation(name: 'UHFJar_V1.4.06', ext: 'aar')
+    // implementation files('libs/UHFJar_V1.4.06.aar')
+    compileOnly fileTree(dir: 'libs', include: ['*.aar'])
+}

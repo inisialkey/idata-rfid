@@ -1,0 +1,79 @@
+plugins {
+    id "com.android.application"
+    id "kotlin-android"
+    id "dev.flutter.flutter-gradle-plugin"
+}
+
+android {
+    namespace "com.example.idata_rfid_example"
+    compileSdk flutter.compileSdkVersion
+    ndkVersion flutter.ndkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    kotlinOptions {
+        jvmTarget = JavaVersion.VERSION_11.toString()
+    }
+
+    defaultConfig {
+        applicationId "com.example.idata_rfid_example"
+        minSdk flutter.minSdkVersion
+        targetSdk flutter.targetSdkVersion
+        versionCode flutter.versionCode
+        versionName flutter.versionName
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    applicationVariants.configureEach { variant ->
+        variant.outputs.configureEach { output ->
+            // Flutter expects the .apk inside example/build/app/outputs/flutter-apk
+            def flutterApkDir = new File("${rootProject.projectDir}/../build/app/outputs/flutter-apk")
+            flutterApkDir.mkdirs()
+
+            output.outputFileName = "app-${variant.buildType.name}.apk"
+
+            tasks.named("assemble${variant.name.capitalize()}").configure {
+                doLast {
+                    def fromFile = new File("${project.buildDir}/outputs/apk/${variant.buildType.name}/app-${variant.buildType.name}.apk")
+                    def toFile = new File(flutterApkDir, "app-${variant.buildType.name}.apk")
+
+                    if (fromFile.exists()) {
+                        copy {
+                            from fromFile
+                            into flutterApkDir
+                        }
+                        println "✅ Copied APK to ${toFile.absolutePath}"
+                    } else {
+                        println "⚠️ APK not found at ${fromFile.absolutePath}"
+                    }
+                }
+            }
+        }
+    }
+}
+
+flutter {
+    source "../.."
+}
+
+dependencies {
+    implementation project(':idata_rfid')
+}
+
+// Opsional: masih bisa keep logging path
+afterEvaluate {
+    tasks.matching { it.name.startsWith("assemble") }.all {
+        doLast {
+            println "✅ APK generated at: ${buildDir}/outputs/flutter-apk/"
+            println "📦 APK files: " + fileTree(dir: "${buildDir}/outputs/flutter-apk/", include: "**/*.apk").files
+        }
+    }
+}
