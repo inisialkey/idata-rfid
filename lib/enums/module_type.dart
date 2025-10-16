@@ -1,9 +1,9 @@
 enum UhfModuleType {
-  UM_MODULE('UM_MODULE'),
-  SLR_MODULE('SLR_MODULE'),
-  GX_MODULE('GX_MODULE'),
-  RM_MODULE('RM_MODULE'),
-  YRM_MODULE('YRM_MODULE');
+  umModule('UM_MODULE'),
+  slrModule('SLR_MODULE'),
+  gxModule('GX_MODULE'),
+  rmModule('RM_MODULE'),
+  yrmModule('YRM_MODULE');
 
   final String value;
   const UhfModuleType(this.value);
