@@ -1,6 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:idata_rfid/exception/uhf_exception.dart';
 import 'package:idata_rfid/idata_rfid.dart';
+import 'package:idata_rfid_example/models/tag_with_count.dart';
+
+import 'settings_page.dart';
+
+// 🔘 Tambah enum untuk mode scanning
+enum ScanMode { single, continuous }
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -14,89 +22,56 @@ class _HomePageState extends State<HomePage> {
 
   bool _isPoweredOn = false;
   bool _isScanning = false;
-  final List<TagData> _tags = [];
+  final List<TagWithCount> _tags = [];
   String _status = 'Not initialized';
   String? _hardwareVersion;
   String? _firmwareVersion;
   int _currentPower = 30;
 
+  // ⭐ Inventory time tracking
+  DateTime? _scanStartTime;
+  Timer? _inventoryTimer;
+  Timer? _autoStopTimer; // ⏱️ Tambahan untuk auto stop
+  Duration _inventoryDuration = Duration.zero;
+  StreamSubscription<TagData>? _tagSubscription;
+
+  // ⌨️ Controller untuk input inventory time (ms)
+  final _inventoryTimeController = TextEditingController();
+
+  // 🔘 Tambah variabel mode
+  ScanMode _scanMode = ScanMode.continuous;
+
   @override
   void initState() {
     super.initState();
-    // Delay initialization to ensure context is available
     Future.delayed(Duration.zero, _initializeUhf);
   }
 
   Future<void> _initializeUhf() async {
     try {
       setState(() => _status = 'Initializing...');
+      await uhf.initialize(UhfModuleType.slrModule);
 
-      // IMPORTANT: Device-specific module type
-      // M118 = UM_MODULE
-      // T1U-1, T2X = SLR_MODULE
-      // Auto-detect or let user select
-
-      // For now, default to UM_MODULE (for M118)
-      // Change to SLR_MODULE if using T1U-1 or T2X
-      await uhf.initialize(
-        UhfModuleType.umModule,
-      ); // <-- Change this based on device
-
-      // Get device info (will work after powerOn)
-      setState(() => _status = 'Initialized. Please power on.');
-      _showSnackBar('Device initialized. Tap Power On to start.');
-    } on UhfException catch (e) {
-      setState(() => _status = 'Init error: ${e.message}');
-      _showSnackBar('Error: ${e.message}');
-    } catch (e) {
-      setState(() => _status = 'Unexpected error: $e');
-      _showSnackBar('Unexpected error: $e');
-    }
-  }
-
-  Future<void> _powerOn() async {
-    try {
-      setState(() => _status = 'Powering on (wait 3 seconds)...');
+      setState(() => _status = 'Initialized. Powering on...');
       await uhf.powerOn();
 
-      // Get device info after power on
       try {
         _hardwareVersion = await uhf.getHardwareVersion();
         _firmwareVersion = await uhf.getFirmwareVersion();
-      } catch (e) {
+        _currentPower = await uhf.getPower();
+      } catch (_) {
         _hardwareVersion = 'N/A';
         _firmwareVersion = 'N/A';
       }
 
       setState(() {
         _isPoweredOn = true;
-        _status = 'Powered on';
+        _status = 'Ready to scan';
       });
-      _showSnackBar('UHF powered on successfully');
+      _showSnackBar('Device ready. Initialize Success');
     } on UhfException catch (e) {
-      setState(() => _status = 'Power on error: ${e.message}');
-      _showSnackBar('Power on error: ${e.message}');
-    }
-  }
-
-  Future<void> _powerOff() async {
-    try {
-      if (_isScanning) {
-        await _stopScanning();
-      }
-
-      setState(() => _status = 'Powering off...');
-      await uhf.powerOff();
-
-      setState(() {
-        _isPoweredOn = false;
-        _status = 'Powered off';
-        _tags.clear();
-      });
-      _showSnackBar('UHF powered off successfully');
-    } on UhfException catch (e) {
-      setState(() => _status = 'Power off error: ${e.message}');
-      _showSnackBar('Power off error: ${e.message}');
+      setState(() => _status = 'Init error: ${e.message}');
+      _showSnackBar('Error: ${e.message}');
     }
   }
 
@@ -109,98 +84,143 @@ class _HomePageState extends State<HomePage> {
     try {
       setState(() {
         _status = 'Configuring...';
-        _tags.clear();
+        _inventoryDuration = Duration.zero;
       });
 
-      // Set frequency to USA (recommended for most use cases)
       await uhf.setFrequencyMode(FrequencyMode.usa_902_928);
-
-      // Set to read EPC + TID mode
       await uhf.setReadMode(ReadMode.epcAndTid);
-
-      // For SLR modules (T2X, T1U-1), set inventory mode to RAW (mode 4)
-      // This provides optimal performance for these devices
       await uhf.setInventoryMode(InventoryMode.raw);
-
-      // Set session mode to S0 (recommended for general use)
       await uhf.setSessionMode(SessionMode.s0);
-
-      // Start inventory with read mode 1 (EPC + TID)
       await uhf.startInventory(readMode: 1);
+
+      _scanStartTime = DateTime.now();
+      _startInventoryTimer();
 
       setState(() {
         _isScanning = true;
         _status = 'Scanning...';
       });
 
-      // Listen to tag stream for real-time tag updates
-      uhf.tagStream.listen(
-        (tag) {
-          setState(() {
-            // Check if tag already exists (by EPC)
-            final index = _tags.indexWhere((t) => t.epc == tag.epc);
-            if (index >= 0) {
-              // Update existing tag's RSSI and timestamp
-              _tags[index] = tag;
-              // Move to top of list (most recent)
-              _tags.removeAt(index);
-              _tags.insert(0, tag);
-            } else {
-              // Add new tag at top
-              _tags.insert(0, tag);
-              // Keep only latest 1000 tags to avoid memory issues
-              if (_tags.length > 1000) {
-                _tags.removeLast();
-              }
-            }
-          });
-        },
-        onError: (error) {
-          _showSnackBar('Stream error: $error');
-          setState(() => _status = 'Stream error: $error');
-        },
-      );
+      _tagSubscription?.cancel();
+      _tagSubscription = uhf.tagStream.listen((tag) {
+        setState(() {
+          final index = _tags.indexWhere((t) => t.tag.epc == tag.epc);
 
-      _showSnackBar('Inventory started');
+          // 🔘 Logika tergantung mode scanning
+          if (_scanMode == ScanMode.single) {
+            // Mode SINGLE: hanya tambahkan jika tag belum pernah dibaca
+            if (index == -1) {
+              _tags.add(
+                TagWithCount(tag: tag, count: 1, lastSeen: DateTime.now()),
+              );
+            }
+          } else {
+            // Mode CONTINUOUS: hitung terus setiap kali tag terbaca
+            if (index >= 0) {
+              _tags[index] = TagWithCount(
+                tag: tag,
+                count: _tags[index].count + 1,
+                lastSeen: DateTime.now(),
+              );
+            } else {
+              _tags.add(
+                TagWithCount(tag: tag, count: 1, lastSeen: DateTime.now()),
+              );
+              if (_tags.length > 1000) _tags.removeAt(0);
+            }
+          }
+        });
+      });
+
+      // 🔥 Auto stop berdasarkan input user
+      final inputMs = int.tryParse(_inventoryTimeController.text.trim());
+      if (inputMs != null && inputMs > 0) {
+        _autoStopTimer?.cancel();
+        _autoStopTimer = Timer(Duration(milliseconds: inputMs), () async {
+          await _stopScanning();
+        });
+      }
     } on UhfException catch (e) {
       setState(() => _status = 'Start error: ${e.message}');
       _showSnackBar('Start error: ${e.message}');
-    } catch (e) {
-      setState(() => _status = 'Unexpected error: $e');
-      _showSnackBar('Unexpected error: $e');
     }
   }
 
   Future<void> _stopScanning() async {
     try {
       setState(() => _status = 'Stopping inventory...');
+      _stopInventoryTimer();
+      _autoStopTimer?.cancel();
+      await _tagSubscription?.cancel();
       await uhf.stopInventory();
 
       setState(() {
         _isScanning = false;
         _status = 'Stopped';
       });
-      _showSnackBar('Inventory stopped');
     } on UhfException catch (e) {
       setState(() => _status = 'Stop error: ${e.message}');
       _showSnackBar('Stop error: ${e.message}');
     }
   }
 
-  Future<void> _setPower(int power) async {
-    try {
-      await uhf.setPower(power);
-      int current = await uhf.getPower();
-      setState(() => _currentPower = current);
-      _showSnackBar('Power set to $current');
-    } on UhfException catch (e) {
-      _showSnackBar('Power error: ${e.message}');
-    }
+  void _startInventoryTimer() {
+    _inventoryTimer?.cancel();
+    _inventoryTimer = Timer.periodic(const Duration(milliseconds: 100), (
+      timer,
+    ) {
+      if (_scanStartTime != null) {
+        setState(() {
+          _inventoryDuration = DateTime.now().difference(_scanStartTime!);
+        });
+      }
+    });
+  }
+
+  void _stopInventoryTimer() {
+    _inventoryTimer?.cancel();
+    _inventoryTimer = null;
   }
 
   Future<void> _clearTags() async {
-    setState(() => _tags.clear());
-    _showSnackBar('Tags cleared');
+    setState(() {
+      _tags.clear();
+      _inventoryDuration = Duration.zero;
+    });
+  }
+
+  Future<void> _confirmClearTags() async {
+    if (_isScanning) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm', style: TextStyle(fontSize: 14)),
+        content: const Text(
+          'Are you sure you want to clear all detected tags?',
+          style: TextStyle(fontSize: 12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(color: Colors.black38),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
+            child: const Text('Clear', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      _clearTags();
+      _showSnackBar('All tags cleared');
+    }
   }
 
   void _showSnackBar(String message) {
@@ -209,197 +229,289 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _navigateToSettings() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => SettingsPage(
+          isPoweredOn: _isPoweredOn,
+          status: _status,
+          hardwareVersion: _hardwareVersion,
+          firmwareVersion: _firmwareVersion,
+          currentPower: _currentPower,
+          isScanning: _isScanning,
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _stopInventoryTimer();
+    _autoStopTimer?.cancel();
+    _tagSubscription?.cancel();
+    if (_isPoweredOn) {
+      if (_isScanning) {
+        uhf.stopInventory();
+      }
+      uhf.powerOff();
+    }
+    _inventoryTimeController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('iData RFID'), elevation: 2),
+      appBar: AppBar(
+        title: const Text('iData RFID'),
+        elevation: 2,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: _navigateToSettings,
+          ),
+        ],
+      ),
       body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Status Card
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Inventory Mode', style: TextStyle(fontSize: 12)),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<ScanMode>(
+                segments: const [
+                  ButtonSegment<ScanMode>(
+                    value: ScanMode.single,
+                    label: Text('Single', style: TextStyle(fontSize: 12)),
+                  ),
+                  ButtonSegment<ScanMode>(
+                    value: ScanMode.continuous,
+                    label: Text('Continuous', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+                selected: {_scanMode},
+                onSelectionChanged: _isScanning
+                    ? null
+                    : (Set<ScanMode> selected) {
+                        setState(() => _scanMode = selected.first);
+                      },
+                showSelectedIcon: false,
+                style: ButtonStyle(visualDensity: VisualDensity.compact),
+              ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // ⌨️ Input field untuk durasi inventory
+            Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: TextField(
+                      controller: _inventoryTimeController,
+                      decoration: const InputDecoration(
+                        labelText: 'Inventory Time (ms)',
+                        labelStyle: TextStyle(fontSize: 12),
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: _isPoweredOn
+                          ? (_isScanning ? _stopScanning : _startScanning)
+                          : null,
+                      icon: Icon(_isScanning ? Icons.stop : Icons.play_arrow),
+                      label: Text(
+                        _isScanning ? 'Inventory Stop' : 'Inventory Start',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            const SizedBox(height: 12),
+
+            // 📊 Info Tags
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tags Found: ${_tags.length}',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Inventory Time: ${_inventoryDuration.inMilliseconds} ms',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                  ],
+                ),
+                if (_tags.isNotEmpty)
+                  Opacity(
+                    opacity: _isScanning ? 0.4 : 1,
+                    child: IgnorePointer(
+                      ignoring: _isScanning,
+                      child: GestureDetector(
+                        onTap: _confirmClearTags,
+                        child: Row(
+                          children: const [
+                            Icon(Icons.delete_outline, size: 16),
+                            SizedBox(width: 8),
+                            Text('Clear', style: TextStyle(fontSize: 11)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            const SizedBox(height: 10),
+
+            if (_tags.isEmpty)
+              Container(
+                padding: const EdgeInsets.all(32),
+                child: Center(
+                  child: Text(
+                    _isScanning
+                        ? 'Waiting for tags...'
+                        : 'No tags found. Start to detect tags.',
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ),
+              )
+            else
               Card(
                 elevation: 2,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Device Status',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const Divider(),
-                      Text('Status: $_status'),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Power: ${_isPoweredOn ? 'ON' : 'OFF'}',
-                        style: TextStyle(
-                          color: _isPoweredOn ? Colors.green : Colors.red,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      Text(
-                        'Scanning: ${_isScanning ? 'YES' : 'NO'}',
-                        style: TextStyle(
-                          color: _isScanning ? Colors.green : Colors.grey,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      if (_hardwareVersion != null)
-                        Text('Hardware: $_hardwareVersion'),
-                      if (_firmwareVersion != null)
-                        Text('Firmware: $_firmwareVersion'),
-                    ],
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-
-              // Control Buttons
-              Text('Controls', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  ElevatedButton.icon(
-                    onPressed: _isPoweredOn ? null : _powerOn,
-                    icon: const Icon(Icons.power_settings_new),
-                    label: const Text('Power On'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _isPoweredOn ? _powerOff : null,
-                    icon: const Icon(Icons.power_settings_new),
-                    label: const Text('Power Off'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: (_isPoweredOn && !_isScanning)
-                        ? _startScanning
-                        : null,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Start Scan'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: _isScanning ? _stopScanning : null,
-                    icon: const Icon(Icons.stop),
-                    label: const Text('Stop Scan'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-
-              // Power Level Control
-              if (_isPoweredOn)
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'RF Power Level: $_currentPower',
-                          style: Theme.of(context).textTheme.titleSmall,
-                        ),
-                        Slider(
-                          min: 0,
-                          max: 33,
-                          divisions: 33,
-                          value: _currentPower.toDouble(),
-                          label: '$_currentPower',
-                          onChanged: (value) => _setPower(value.toInt()),
-                        ),
-                        Text(
-                          'Adjust RF power (0-33). Higher values = longer read distance but higher power consumption.',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              const SizedBox(height: 10),
-
-              // Tags List Header
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(
-                    'Tags Found: ${_tags.length}',
-                    style: Theme.of(context).textTheme.titleMedium,
-                  ),
-                  if (_tags.isNotEmpty)
-                    TextButton.icon(
-                      onPressed: _clearTags,
-                      icon: const Icon(Icons.delete_outline),
-                      label: const Text('Clear'),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-
-              // Tags List
-              if (_tags.isEmpty)
-                Container(
-                  padding: const EdgeInsets.all(32),
-                  child: Center(
-                    child: Text(
-                      _isScanning
-                          ? 'Waiting for tags...'
-                          : 'No tags found. Start scanning to detect tags.',
-                      textAlign: TextAlign.center,
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                  ),
-                )
-              else
-                ListView.builder(
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  itemCount: _tags.length,
-                  itemBuilder: (context, index) {
-                    final tag = _tags[index];
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 4),
-                      child: ListTile(
-                        leading: CircleAvatar(child: Text('${index + 1}')),
-                        title: Text(
-                          'EPC: ${tag.epc}',
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                          ),
-                        ),
-                        subtitle: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                child: Column(
+                  children: [
+                    Container(
+                      color: Colors.grey[200],
+                      child: const Padding(
+                        padding: EdgeInsets.all(8.0),
+                        child: Row(
                           children: [
-                            if (tag.tid != null)
-                              Text(
-                                'TID: ${tag.tid}',
-                                style: const TextStyle(fontSize: 11),
+                            SizedBox(
+                              width: 40,
+                              child: Text(
+                                'SN',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                               ),
-                            Text(
-                              'RSSI: ${tag.rssi} dBm',
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: _getRssiColor(tag.rssi),
-                                fontWeight: FontWeight.bold,
+                            ),
+                            Expanded(
+                              child: Text(
+                                'EPC',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 8,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 50,
+                              child: Text(
+                                'Num',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 8,
+                                ),
+                              ),
+                            ),
+                            SizedBox(
+                              width: 60,
+                              child: Text(
+                                'RSSI',
+                                textAlign: TextAlign.right,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 8,
+                                ),
                               ),
                             ),
                           ],
                         ),
-                        // trailing: Text(
-                        //   '${tag.timestamp.hour}:${tag.timestamp.minute}:${tag.timestamp.second}',
-                        //   style: const TextStyle(fontSize: 12),
-                        // ),
                       ),
-                    );
-                  },
+                    ),
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _tags.length,
+                      separatorBuilder: (_, __) =>
+                          Divider(height: 1, color: Colors.grey[300]),
+                      itemBuilder: (context, index) {
+                        final tag = _tags[index].tag;
+                        return Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: Row(
+                            children: [
+                              SizedBox(
+                                width: 40,
+                                child: Text(
+                                  '${index + 1}',
+                                  style: const TextStyle(fontSize: 8),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  tag.epc,
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 8,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 50,
+                                child: Text(
+                                  '${_tags[index].count}',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              SizedBox(
+                                width: 60,
+                                child: Text(
+                                  '${tag.rssi}',
+                                  textAlign: TextAlign.right,
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                    color: _getRssiColor(tag.rssi),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ],
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );
@@ -409,14 +521,5 @@ class _HomePageState extends State<HomePage> {
     if (rssi >= -60) return Colors.green;
     if (rssi >= -80) return Colors.orange;
     return Colors.red;
-  }
-
-  @override
-  void dispose() {
-    // Clean up when app closes
-    if (_isPoweredOn) {
-      _powerOff();
-    }
-    super.dispose();
   }
 }

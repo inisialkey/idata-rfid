@@ -681,14 +681,12 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
             try {
                 Map<String, Object> tag = new HashMap<>();
                 
-                // Format depends on module type and read mode
-                // tagData[0] = TID or null
-                // tagData[1] = EPC
-                // tagData[2] = RSSI (hex string)
-                
                 String tid = tagData.length > 0 ? tagData[0] : null;
                 String epc = tagData.length > 1 ? tagData[1] : null;
                 String rssiHex = tagData.length > 2 ? tagData[2] : null;
+
+                // ⭐ ADD THIS DEBUG LOG
+                Log.d(TAG, "Raw RSSI hex: [" + rssiHex + "] length=" + (rssiHex != null ? rssiHex.length() : 0));
 
                 if (epc == null || epc.isEmpty()) {
                     return null;
@@ -701,8 +699,11 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
                 }
 
                 int rssi = parseRssi(rssiHex);
-                tag.put("rssi", rssi);
                 
+                // ⭐ ADD THIS DEBUG LOG
+                Log.d(TAG, "Parsed RSSI: " + rssi + " dBm");
+                
+                tag.put("rssi", rssi);
                 tag.put("timestamp", System.currentTimeMillis());
 
                 return tag;
@@ -715,18 +716,51 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
 
         private int parseRssi(String rssiHex) {
             try {
-                if (rssiHex == null || rssiHex.length() < 4) {
+                if (rssiHex == null || rssiHex.isEmpty()) {
                     return 0;
                 }
-
-                int hb = Integer.parseInt(rssiHex.substring(0, 2), 16);
-                int lb = Integer.parseInt(rssiHex.substring(2, 4), 16);
                 
-                // Formula for SLRLib RSSI calculation
-                return ((hb - 256 + 1) * 256 + (lb - 256)) / 10;
+                // Remove any whitespace
+                rssiHex = rssiHex.trim();
+                
+                // RSSI format bisa berbeda tergantung module:
+                // Format 1: "FFXX" (2 bytes hex) 
+                // Format 2: "XX" (1 byte hex)
+                // Format 3: "-50" (sudah dalam decimal)
+                
+                // Check if already in decimal format (negative number)
+                if (rssiHex.startsWith("-")) {
+                    return Integer.parseInt(rssiHex);
+                }
+                
+                // Parse hex format
+                if (rssiHex.length() >= 4) {
+                    // 4-digit hex format (2 bytes)
+                    int value = Integer.parseInt(rssiHex, 16);
+                    
+                    // Convert to signed 16-bit value
+                    if (value > 32767) {
+                        value = value - 65536;
+                    }
+                    
+                    return value / 10; // Divide by 10 as per vendor formula
+                    
+                } else if (rssiHex.length() == 2) {
+                    // 2-digit hex format (1 byte)
+                    int value = Integer.parseInt(rssiHex, 16);
+                    
+                    // Convert to signed 8-bit value
+                    if (value > 127) {
+                        value = value - 256;
+                    }
+                    
+                    return value;
+                }
+                
+                return 0;
                 
             } catch (Exception e) {
-                Log.e(TAG, "Error parsing RSSI", e);
+                Log.e(TAG, "Error parsing RSSI: " + rssiHex, e);
                 return 0;
             }
         }
