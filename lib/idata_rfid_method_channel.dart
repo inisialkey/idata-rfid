@@ -187,4 +187,132 @@ class MethodChannelIdataRfid extends IdataRfidPlatform {
       }
     });
   }
+
+  // Add these methods to your MethodChannelIdataRfid class
+
+  @override
+  Future<bool> writeDataToEpc(
+    String accessPassword,
+    int startAddr,
+    int wordCount,
+    String data,
+  ) async {
+    try {
+      final result = await methodChannel.invokeMethod<bool>('writeDataToEpc', {
+        'accessPassword': accessPassword,
+        'startAddr': startAddr,
+        'wordCount': wordCount,
+        'data': data,
+      });
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw UhfException('WRITE_ERROR', e.message ?? 'Write EPC failed');
+    }
+  }
+
+  @override
+  Future<bool> writeTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int targetBank,
+    int targetPtr,
+    int targetLen,
+    String writeData,
+  ) async {
+    try {
+      final result = await methodChannel.invokeMethod<bool>('writeTag', {
+        'accessPassword': accessPassword,
+        'filterBank': filterBank,
+        'filterPtr': filterPtr,
+        'filterLen': filterLen,
+        'filterData': filterData,
+        'targetBank': targetBank,
+        'targetPtr': targetPtr,
+        'targetLen': targetLen,
+        'writeData': writeData,
+      });
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw UhfException('WRITE_ERROR', e.message ?? 'Write tag failed');
+    }
+  }
+
+  @override
+  Future<String?> readTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int targetBank,
+    int targetPtr,
+    int targetLen,
+  ) async {
+    try {
+      final result = await methodChannel.invokeMethod<String>('readTag', {
+        'accessPassword': accessPassword,
+        'filterBank': filterBank,
+        'filterPtr': filterPtr,
+        'filterLen': filterLen,
+        'filterData': filterData,
+        'targetBank': targetBank,
+        'targetPtr': targetPtr,
+        'targetLen': targetLen,
+      });
+      return result;
+    } on PlatformException catch (e) {
+      throw UhfException('READ_ERROR', e.message ?? 'Read tag failed');
+    }
+  }
+
+  @override
+  Future<bool> lockTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int lockBank,
+    int lockType,
+  ) async {
+    try {
+      final result = await methodChannel.invokeMethod<bool>('lockTag', {
+        'accessPassword': accessPassword,
+        'filterBank': filterBank,
+        'filterPtr': filterPtr,
+        'filterLen': filterLen,
+        'filterData': filterData,
+        'lockBank': lockBank,
+        'lockType': lockType,
+      });
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw UhfException('LOCK_ERROR', e.message ?? 'Lock tag failed');
+    }
+  }
+
+  @override
+  Future<bool> killTag(
+    String killPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+  ) async {
+    try {
+      final result = await methodChannel.invokeMethod<bool>('killTag', {
+        'killPassword': killPassword,
+        'filterBank': filterBank,
+        'filterPtr': filterPtr,
+        'filterLen': filterLen,
+        'filterData': filterData,
+      });
+      return result ?? false;
+    } on PlatformException catch (e) {
+      throw UhfException('KILL_ERROR', e.message ?? 'Kill tag failed');
+    }
+  }
 }

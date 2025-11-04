@@ -138,6 +138,25 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
                 case "getModuleTemp":
                     handleGetModuleTemp(result);
                     break;
+                case "writeDataToEpc":
+                    handleWriteDataToEpc(call, result);
+                    break;
+                    
+                case "writeTag":
+                    handleWriteTag(call, result);
+                    break;
+                    
+                case "readTag":
+                    handleReadTag(call, result);
+                    break;
+                    
+                case "lockTag":
+                    handleLockTag(call, result);
+                    break;
+                    
+                case "killTag":
+                    handleKillTag(call, result);
+                    break;
                     
                 case "setReadMode":
                     handleSetReadMode(call, result);
@@ -596,6 +615,225 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
         }).start();
     }
 
+    private void handleWriteDataToEpc(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer startAddr = call.argument("startAddr");
+                    Integer wordCount = call.argument("wordCount");
+                    String data = call.argument("data");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (startAddr == null) startAddr = 2;
+                    if (wordCount == null) wordCount = 6;
+                    if (data == null) data = "";
+                    
+                    final boolean success = uhfManager.writeDataToEpc(
+                        accessPassword,
+                        startAddr,
+                        wordCount,
+                        data
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Write EPC error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("WRITE_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleWriteTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    Integer targetBank = call.argument("targetBank");
+                    Integer targetPtr = call.argument("targetPtr");
+                    Integer targetLen = call.argument("targetLen");
+                    String writeData = call.argument("writeData");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    if (targetBank == null) targetBank = 1;
+                    if (targetPtr == null) targetPtr = 2;
+                    if (targetLen == null) targetLen = 6;
+                    if (writeData == null) writeData = "";
+                    
+                    final boolean success = uhfManager.writeTag(
+                        accessPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData,
+                        targetBank,
+                        targetPtr,
+                        targetLen,
+                        writeData
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Write tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("WRITE_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleReadTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    Integer targetBank = call.argument("targetBank");
+                    Integer targetPtr = call.argument("targetPtr");
+                    Integer targetLen = call.argument("targetLen");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    if (targetBank == null) targetBank = 1;
+                    if (targetPtr == null) targetPtr = 2;
+                    if (targetLen == null) targetLen = 6;
+                    
+                    final String readData = uhfManager.readTag(
+                        accessPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData,
+                        targetBank,
+                        targetPtr,
+                        targetLen
+                    );
+                    
+                    mainHandler.post(() -> result.success(readData));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Read tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("READ_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleLockTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    Integer lockBank = call.argument("lockBank");
+                    Integer lockType = call.argument("lockType");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    if (lockBank == null) lockBank = 2;
+                    if (lockType == null) lockType = 0;
+                    
+                    final boolean success = uhfManager.lockMen(
+                        accessPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData,
+                        lockBank,
+                        lockType
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Lock tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("LOCK_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleKillTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String killPassword = call.argument("killPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    
+                    if (killPassword == null) killPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    
+                    final boolean success = uhfManager.killTag(
+                        killPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Kill tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("KILL_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
         Log.d(TAG, "Plugin detaching from engine");
@@ -681,14 +919,12 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
             try {
                 Map<String, Object> tag = new HashMap<>();
                 
-                // Format depends on module type and read mode
-                // tagData[0] = TID or null
-                // tagData[1] = EPC
-                // tagData[2] = RSSI (hex string)
-                
                 String tid = tagData.length > 0 ? tagData[0] : null;
                 String epc = tagData.length > 1 ? tagData[1] : null;
                 String rssiHex = tagData.length > 2 ? tagData[2] : null;
+
+                // ⭐ ADD THIS DEBUG LOG
+                Log.d(TAG, "Raw RSSI hex: [" + rssiHex + "] length=" + (rssiHex != null ? rssiHex.length() : 0));
 
                 if (epc == null || epc.isEmpty()) {
                     return null;
@@ -701,8 +937,11 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
                 }
 
                 int rssi = parseRssi(rssiHex);
-                tag.put("rssi", rssi);
                 
+                // ⭐ ADD THIS DEBUG LOG
+                Log.d(TAG, "Parsed RSSI: " + rssi + " dBm");
+                
+                tag.put("rssi", rssi);
                 tag.put("timestamp", System.currentTimeMillis());
 
                 return tag;
@@ -715,18 +954,51 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
 
         private int parseRssi(String rssiHex) {
             try {
-                if (rssiHex == null || rssiHex.length() < 4) {
+                if (rssiHex == null || rssiHex.isEmpty()) {
                     return 0;
                 }
-
-                int hb = Integer.parseInt(rssiHex.substring(0, 2), 16);
-                int lb = Integer.parseInt(rssiHex.substring(2, 4), 16);
                 
-                // Formula for SLRLib RSSI calculation
-                return ((hb - 256 + 1) * 256 + (lb - 256)) / 10;
+                // Remove any whitespace
+                rssiHex = rssiHex.trim();
+                
+                // RSSI format bisa berbeda tergantung module:
+                // Format 1: "FFXX" (2 bytes hex) 
+                // Format 2: "XX" (1 byte hex)
+                // Format 3: "-50" (sudah dalam decimal)
+                
+                // Check if already in decimal format (negative number)
+                if (rssiHex.startsWith("-")) {
+                    return Integer.parseInt(rssiHex);
+                }
+                
+                // Parse hex format
+                if (rssiHex.length() >= 4) {
+                    // 4-digit hex format (2 bytes)
+                    int value = Integer.parseInt(rssiHex, 16);
+                    
+                    // Convert to signed 16-bit value
+                    if (value > 32767) {
+                        value = value - 65536;
+                    }
+                    
+                    return value / 10; // Divide by 10 as per vendor formula
+                    
+                } else if (rssiHex.length() == 2) {
+                    // 2-digit hex format (1 byte)
+                    int value = Integer.parseInt(rssiHex, 16);
+                    
+                    // Convert to signed 8-bit value
+                    if (value > 127) {
+                        value = value - 256;
+                    }
+                    
+                    return value;
+                }
+                
+                return 0;
                 
             } catch (Exception e) {
-                Log.e(TAG, "Error parsing RSSI", e);
+                Log.e(TAG, "Error parsing RSSI: " + rssiHex, e);
                 return 0;
             }
         }
