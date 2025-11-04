@@ -37,4 +37,51 @@ abstract class IdataRfidPlatform extends PlatformInterface {
   Future<String?> getModuleTemp();
   Future<void> setReadMode(ReadMode mode, {int startAddr = 0, int wordCnt = 0});
   Stream<TagData> get tagStream;
+  Future<bool> writeDataToEpc(
+    String accessPassword,
+    int startAddr,
+    int wordCount,
+    String data,
+  );
+
+  Future<bool> writeTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int targetBank,
+    int targetPtr,
+    int targetLen,
+    String writeData,
+  );
+
+  Future<String?> readTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int targetBank,
+    int targetPtr,
+    int targetLen,
+  );
+
+  Future<bool> lockTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int lockBank,
+    int lockType,
+  );
+
+  Future<bool> killTag(
+    String killPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+  );
 }

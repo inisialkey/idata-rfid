@@ -243,4 +243,107 @@ class IdataRfid {
       return null;
     }
   }
+
+  // Add these methods to your IdataRfid class (idata_rfid.dart)
+
+  /// Write EPC data without filter (to any tag in range)
+  Future<bool> writeDataToEpc(
+    String accessPassword,
+    int startAddr,
+    int wordCount,
+    String data,
+  ) async {
+    _checkInitialized();
+    return _platform.writeDataToEpc(accessPassword, startAddr, wordCount, data);
+  }
+
+  /// Write data to tag with filter (to specific tag)
+  Future<bool> writeTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int targetBank,
+    int targetPtr,
+    int targetLen,
+    String writeData,
+  ) async {
+    _checkInitialized();
+    return _platform.writeTag(
+      accessPassword,
+      filterBank,
+      filterPtr,
+      filterLen,
+      filterData,
+      targetBank,
+      targetPtr,
+      targetLen,
+      writeData,
+    );
+  }
+
+  /// Read data from tag with filter
+  Future<String?> readTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int targetBank,
+    int targetPtr,
+    int targetLen,
+  ) async {
+    _checkInitialized();
+    return _platform.readTag(
+      accessPassword,
+      filterBank,
+      filterPtr,
+      filterLen,
+      filterData,
+      targetBank,
+      targetPtr,
+      targetLen,
+    );
+  }
+
+  /// Lock or unlock tag memory bank
+  Future<bool> lockTag(
+    String accessPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+    int lockBank,
+    int lockType,
+  ) async {
+    _checkInitialized();
+    return _platform.lockTag(
+      accessPassword,
+      filterBank,
+      filterPtr,
+      filterLen,
+      filterData,
+      lockBank,
+      lockType,
+    );
+  }
+
+  /// Kill (permanently destroy) a tag
+  Future<bool> killTag(
+    String killPassword,
+    int filterBank,
+    int filterPtr,
+    int filterLen,
+    String filterData,
+  ) async {
+    _checkInitialized();
+    return _platform.killTag(
+      killPassword,
+      filterBank,
+      filterPtr,
+      filterLen,
+      filterData,
+    );
+  }
 }

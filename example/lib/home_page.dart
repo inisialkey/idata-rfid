@@ -6,6 +6,7 @@ import 'package:idata_rfid/idata_rfid.dart';
 import 'package:idata_rfid_example/models/tag_with_count.dart';
 
 import 'settings_page.dart';
+import 'write_rfid_page.dart';
 
 // 🔘 Tambah enum untuk mode scanning
 enum ScanMode { single, continuous }
@@ -245,6 +246,24 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // ✅ Add navigation to Write page
+  void _navigateToWritePage() {
+    if (!_isPoweredOn) {
+      _showSnackBar('Please power on device first');
+      return;
+    }
+
+    if (_isScanning) {
+      _showSnackBar('Please stop inventory first');
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => const WriteRfidPage()),
+    );
+  }
+
   @override
   void dispose() {
     _stopInventoryTimer();
@@ -267,8 +286,15 @@ class _HomePageState extends State<HomePage> {
         title: const Text('iData RFID'),
         elevation: 2,
         actions: [
+          // ✅ Add Write button
+          IconButton(
+            icon: const Icon(Icons.edit),
+            tooltip: 'Write Tag',
+            onPressed: _navigateToWritePage,
+          ),
           IconButton(
             icon: const Icon(Icons.settings),
+            tooltip: 'Settings',
             onPressed: _navigateToSettings,
           ),
         ],

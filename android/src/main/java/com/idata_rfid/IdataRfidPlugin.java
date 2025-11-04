@@ -138,6 +138,25 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
                 case "getModuleTemp":
                     handleGetModuleTemp(result);
                     break;
+                case "writeDataToEpc":
+                    handleWriteDataToEpc(call, result);
+                    break;
+                    
+                case "writeTag":
+                    handleWriteTag(call, result);
+                    break;
+                    
+                case "readTag":
+                    handleReadTag(call, result);
+                    break;
+                    
+                case "lockTag":
+                    handleLockTag(call, result);
+                    break;
+                    
+                case "killTag":
+                    handleKillTag(call, result);
+                    break;
                     
                 case "setReadMode":
                     handleSetReadMode(call, result);
@@ -592,6 +611,225 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
                 final Result finalResult = result;
                 final String errorMsg = e.getMessage();
                 mainHandler.post(() -> finalResult.error("READ_MODE_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleWriteDataToEpc(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer startAddr = call.argument("startAddr");
+                    Integer wordCount = call.argument("wordCount");
+                    String data = call.argument("data");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (startAddr == null) startAddr = 2;
+                    if (wordCount == null) wordCount = 6;
+                    if (data == null) data = "";
+                    
+                    final boolean success = uhfManager.writeDataToEpc(
+                        accessPassword,
+                        startAddr,
+                        wordCount,
+                        data
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Write EPC error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("WRITE_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleWriteTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    Integer targetBank = call.argument("targetBank");
+                    Integer targetPtr = call.argument("targetPtr");
+                    Integer targetLen = call.argument("targetLen");
+                    String writeData = call.argument("writeData");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    if (targetBank == null) targetBank = 1;
+                    if (targetPtr == null) targetPtr = 2;
+                    if (targetLen == null) targetLen = 6;
+                    if (writeData == null) writeData = "";
+                    
+                    final boolean success = uhfManager.writeTag(
+                        accessPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData,
+                        targetBank,
+                        targetPtr,
+                        targetLen,
+                        writeData
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Write tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("WRITE_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleReadTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    Integer targetBank = call.argument("targetBank");
+                    Integer targetPtr = call.argument("targetPtr");
+                    Integer targetLen = call.argument("targetLen");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    if (targetBank == null) targetBank = 1;
+                    if (targetPtr == null) targetPtr = 2;
+                    if (targetLen == null) targetLen = 6;
+                    
+                    final String readData = uhfManager.readTag(
+                        accessPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData,
+                        targetBank,
+                        targetPtr,
+                        targetLen
+                    );
+                    
+                    mainHandler.post(() -> result.success(readData));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Read tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("READ_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleLockTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String accessPassword = call.argument("accessPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    Integer lockBank = call.argument("lockBank");
+                    Integer lockType = call.argument("lockType");
+                    
+                    if (accessPassword == null) accessPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    if (lockBank == null) lockBank = 2;
+                    if (lockType == null) lockType = 0;
+                    
+                    final boolean success = uhfManager.lockMen(
+                        accessPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData,
+                        lockBank,
+                        lockType
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Lock tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("LOCK_ERROR", errorMsg, null));
+            }
+        }).start();
+    }
+
+    private void handleKillTag(MethodCall call, Result result) {
+        new Thread(() -> {
+            try {
+                synchronized (uhfLock) {
+                    if (uhfManager == null) {
+                        mainHandler.post(() -> result.error("STATE_ERROR", "UHF not initialized", null));
+                        return;
+                    }
+
+                    String killPassword = call.argument("killPassword");
+                    Integer filterBank = call.argument("filterBank");
+                    Integer filterPtr = call.argument("filterPtr");
+                    Integer filterLen = call.argument("filterLen");
+                    String filterData = call.argument("filterData");
+                    
+                    if (killPassword == null) killPassword = "00000000";
+                    if (filterBank == null) filterBank = 1;
+                    if (filterPtr == null) filterPtr = 32;
+                    if (filterLen == null) filterLen = 96;
+                    if (filterData == null) filterData = "";
+                    
+                    final boolean success = uhfManager.killTag(
+                        killPassword,
+                        filterBank,
+                        filterPtr,
+                        filterLen,
+                        filterData
+                    );
+                    
+                    mainHandler.post(() -> result.success(success));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Kill tag error", e);
+                final String errorMsg = e.getMessage() != null ? e.getMessage() : "Unknown error";
+                mainHandler.post(() -> result.error("KILL_ERROR", errorMsg, null));
             }
         }).start();
     }
