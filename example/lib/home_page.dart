@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:idata_rfid/exception/uhf_exception.dart';
 import 'package:idata_rfid/idata_rfid.dart';
 import 'package:idata_rfid_example/models/tag_with_count.dart';
@@ -8,19 +9,16 @@ import 'package:idata_rfid_example/models/tag_with_count.dart';
 import 'settings_page.dart';
 import 'write_rfid_page.dart';
 
-// 🔘 Tambah enum untuk mode scanning
 enum ScanMode { single, continuous }
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
-
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   final uhf = IdataRfid();
-
   bool _isPoweredOn = false;
   bool _isScanning = false;
   final List<TagWithCount> _tags = [];
@@ -28,34 +26,75 @@ class _HomePageState extends State<HomePage> {
   String? _hardwareVersion;
   String? _firmwareVersion;
   int _currentPower = 30;
-
-  // ⭐ Inventory time tracking
   DateTime? _scanStartTime;
   Timer? _inventoryTimer;
-  Timer? _autoStopTimer; // ⏱️ Tambahan untuk auto stop
+  Timer? _autoStopTimer;
   Duration _inventoryDuration = Duration.zero;
   StreamSubscription<TagData>? _tagSubscription;
-
-  // ⌨️ Controller untuk input inventory time (ms)
   final _inventoryTimeController = TextEditingController();
-
-  // 🔘 Tambah variabel mode
   ScanMode _scanMode = ScanMode.continuous;
+
+  // Native hardware trigger
+  static const platform = MethodChannel('com.idata_rfid/hardware_key');
+  bool _isHardwareTriggerPressed = false;
+  String _lastHardwareKey = 'Waiting for hardware button...';
 
   @override
   void initState() {
     super.initState();
+    _setupHardwareKeyListener();
     Future.delayed(Duration.zero, _initializeUhf);
+  }
+
+  void _setupHardwareKeyListener() {
+    platform.setMethodCallHandler((call) async {
+      print('📱 MethodChannel received: ${call.method}');
+      switch (call.method) {
+        case 'onHardwareTriggerPressed':
+          final keyCode = call.arguments?['keyCode'];
+          final keyName = call.arguments?['keyName'] ?? 'UNKNOWN';
+          print('🎮 Hardware trigger PRESSED: $keyName (code: $keyCode)');
+          setState(() => _lastHardwareKey = '✅ Pressed: $keyName ($keyCode)');
+          _handleHardwareTriggerPressed();
+          break;
+        case 'onHardwareTriggerReleased':
+          final keyCode = call.arguments?['keyCode'];
+          final keyName = call.arguments?['keyName'] ?? 'UNKNOWN';
+          print('🎮 Hardware trigger RELEASED: $keyName (code: $keyCode)');
+          setState(() => _lastHardwareKey = '⬆️ Released: $keyName ($keyCode)');
+          _handleHardwareTriggerReleased();
+          break;
+      }
+    });
+    print('✅ Hardware key listener setup complete');
+  }
+
+  void _handleHardwareTriggerPressed() {
+    if (!_isPoweredOn) {
+      _showSnackBar('Please power on UHF first');
+      return;
+    }
+    // Toggle mode
+    if (_isScanning) {
+      print('🛑 Hardware trigger: Stopping scan');
+      _stopScanning();
+    } else {
+      print('🚀 Hardware trigger: Starting scan');
+      setState(() => _isHardwareTriggerPressed = true);
+      _startScanning();
+    }
+  }
+
+  void _handleHardwareTriggerReleased() {
+    // Optional: implement press & hold mode
   }
 
   Future<void> _initializeUhf() async {
     try {
       setState(() => _status = 'Initializing...');
       await uhf.initialize(UhfModuleType.slrModule);
-
       setState(() => _status = 'Initialized. Powering on...');
       await uhf.powerOn();
-
       try {
         _hardwareVersion = await uhf.getHardwareVersion();
         _firmwareVersion = await uhf.getFirmwareVersion();
@@ -64,7 +103,6 @@ class _HomePageState extends State<HomePage> {
         _hardwareVersion = 'N/A';
         _firmwareVersion = 'N/A';
       }
-
       setState(() {
         _isPoweredOn = true;
         _status = 'Ready to scan';
@@ -81,42 +119,33 @@ class _HomePageState extends State<HomePage> {
       _showSnackBar('Please power on UHF first');
       return;
     }
-
     try {
       setState(() {
         _status = 'Configuring...';
         _inventoryDuration = Duration.zero;
       });
-
       await uhf.setFrequencyMode(FrequencyMode.usa_902_928);
       await uhf.setReadMode(ReadMode.epcAndTid);
       await uhf.setInventoryMode(InventoryMode.raw);
       await uhf.setSessionMode(SessionMode.s0);
       await uhf.startInventory(readMode: 1);
-
       _scanStartTime = DateTime.now();
       _startInventoryTimer();
-
       setState(() {
         _isScanning = true;
         _status = 'Scanning...';
       });
-
       _tagSubscription?.cancel();
       _tagSubscription = uhf.tagStream.listen((tag) {
         setState(() {
           final index = _tags.indexWhere((t) => t.tag.epc == tag.epc);
-
-          // 🔘 Logika tergantung mode scanning
           if (_scanMode == ScanMode.single) {
-            // Mode SINGLE: hanya tambahkan jika tag belum pernah dibaca
             if (index == -1) {
               _tags.add(
                 TagWithCount(tag: tag, count: 1, lastSeen: DateTime.now()),
               );
             }
           } else {
-            // Mode CONTINUOUS: hitung terus setiap kali tag terbaca
             if (index >= 0) {
               _tags[index] = TagWithCount(
                 tag: tag,
@@ -132,14 +161,15 @@ class _HomePageState extends State<HomePage> {
           }
         });
       });
-
-      // 🔥 Auto stop berdasarkan input user
-      final inputMs = int.tryParse(_inventoryTimeController.text.trim());
-      if (inputMs != null && inputMs > 0) {
-        _autoStopTimer?.cancel();
-        _autoStopTimer = Timer(Duration(milliseconds: inputMs), () async {
-          await _stopScanning();
-        });
+      if (!_isHardwareTriggerPressed) {
+        final inputMs = int.tryParse(_inventoryTimeController.text.trim());
+        if (inputMs != null && inputMs > 0) {
+          _autoStopTimer?.cancel();
+          _autoStopTimer = Timer(
+            Duration(milliseconds: inputMs),
+            _stopScanning,
+          );
+        }
       }
     } on UhfException catch (e) {
       setState(() => _status = 'Start error: ${e.message}');
@@ -154,10 +184,10 @@ class _HomePageState extends State<HomePage> {
       _autoStopTimer?.cancel();
       await _tagSubscription?.cancel();
       await uhf.stopInventory();
-
       setState(() {
         _isScanning = false;
         _status = 'Stopped';
+        _isHardwareTriggerPressed = false;
       });
     } on UhfException catch (e) {
       setState(() => _status = 'Stop error: ${e.message}');
@@ -171,9 +201,9 @@ class _HomePageState extends State<HomePage> {
       timer,
     ) {
       if (_scanStartTime != null) {
-        setState(() {
-          _inventoryDuration = DateTime.now().difference(_scanStartTime!);
-        });
+        setState(
+          () => _inventoryDuration = DateTime.now().difference(_scanStartTime!),
+        );
       }
     });
   }
@@ -192,7 +222,6 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _confirmClearTags() async {
     if (_isScanning) return;
-
     final confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -217,7 +246,6 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
-
     if (confirm == true) {
       _clearTags();
       _showSnackBar('All tags cleared');
@@ -246,18 +274,15 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ✅ Add navigation to Write page
   void _navigateToWritePage() {
     if (!_isPoweredOn) {
       _showSnackBar('Please power on device first');
       return;
     }
-
     if (_isScanning) {
       _showSnackBar('Please stop inventory first');
       return;
     }
-
     Navigator.push(
       context,
       MaterialPageRoute(builder: (context) => const WriteRfidPage()),
@@ -270,9 +295,7 @@ class _HomePageState extends State<HomePage> {
     _autoStopTimer?.cancel();
     _tagSubscription?.cancel();
     if (_isPoweredOn) {
-      if (_isScanning) {
-        uhf.stopInventory();
-      }
+      if (_isScanning) uhf.stopInventory();
       uhf.powerOff();
     }
     _inventoryTimeController.dispose();
@@ -286,7 +309,6 @@ class _HomePageState extends State<HomePage> {
         title: const Text('iData RFID'),
         elevation: 2,
         actions: [
-          // ✅ Add Write button
           IconButton(
             icon: const Icon(Icons.edit),
             tooltip: 'Write Tag',
@@ -304,6 +326,54 @@ class _HomePageState extends State<HomePage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              margin: const EdgeInsets.only(bottom: 12),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.keyboard, size: 16, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Hardware: $_lastHardwareKey',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (_isHardwareTriggerPressed)
+              Container(
+                padding: const EdgeInsets.all(8),
+                margin: const EdgeInsets.only(bottom: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: const [
+                    Icon(
+                      Icons.radio_button_checked,
+                      size: 16,
+                      color: Colors.blue,
+                    ),
+                    SizedBox(width: 8),
+                    Text(
+                      'Hardware trigger active - Press again to stop',
+                      style: TextStyle(fontSize: 11, color: Colors.blue),
+                    ),
+                  ],
+                ),
+              ),
             const Text('Inventory Mode', style: TextStyle(fontSize: 12)),
             SizedBox(
               width: double.infinity,
@@ -321,17 +391,13 @@ class _HomePageState extends State<HomePage> {
                 selected: {_scanMode},
                 onSelectionChanged: _isScanning
                     ? null
-                    : (Set<ScanMode> selected) {
-                        setState(() => _scanMode = selected.first);
-                      },
+                    : (Set<ScanMode> selected) =>
+                          setState(() => _scanMode = selected.first),
                 showSelectedIcon: false,
                 style: ButtonStyle(visualDensity: VisualDensity.compact),
               ),
             ),
-
             const SizedBox(height: 12),
-
-            // ⌨️ Input field untuk durasi inventory
             Row(
               children: [
                 Expanded(
@@ -358,7 +424,7 @@ class _HomePageState extends State<HomePage> {
                           : null,
                       icon: Icon(_isScanning ? Icons.stop : Icons.play_arrow),
                       label: Text(
-                        _isScanning ? 'Inventory Stop' : 'Inventory Start',
+                        _isScanning ? 'Stop' : 'Start',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
@@ -366,10 +432,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-
             const SizedBox(height: 12),
-
-            // 📊 Info Tags
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -406,9 +469,7 @@ class _HomePageState extends State<HomePage> {
                   ),
               ],
             ),
-
             const SizedBox(height: 10),
-
             if (_tags.isEmpty)
               Container(
                 padding: const EdgeInsets.all(32),
@@ -416,7 +477,7 @@ class _HomePageState extends State<HomePage> {
                   child: Text(
                     _isScanning
                         ? 'Waiting for tags...'
-                        : 'No tags found. Start to detect tags.',
+                        : 'Press hardware trigger or tap Start button',
                     textAlign: TextAlign.center,
                     style: Theme.of(context).textTheme.bodyMedium,
                   ),
