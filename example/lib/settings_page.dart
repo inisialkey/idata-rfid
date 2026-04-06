@@ -39,7 +39,8 @@ class _SettingsPageState extends State<SettingsPage> {
       await uhf.setPower(power);
       int current = await uhf.getPower();
       setState(() => _currentPower = current);
-      _showSnackBar('Power set to $current');
+      // _showSnackBar('Power set to $current');
+      print('Power set to $current');
     } on UhfException catch (e) {
       _showSnackBar('Power error: ${e.message}');
     }

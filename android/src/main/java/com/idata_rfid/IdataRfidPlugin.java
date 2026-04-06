@@ -50,13 +50,26 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
         context = binding.getApplicationContext();
-        mainHandler = new Handler(Looper.getMainLooper());
         
-        // Setup method channel
+        // ✅ Delay handler creation untuk menghindari race condition
+        new Thread(() -> {
+            try {
+                // Tunggu sebentar untuk memastikan semua service ready
+                Thread.sleep(100);
+                
+                // Buat handler di main thread setelah delay
+                mainHandler = new Handler(Looper.getMainLooper());
+                
+                Log.d(TAG, "Plugin attached to engine (delayed init)");
+            } catch (InterruptedException e) {
+                mainHandler = new Handler(Looper.getMainLooper());
+            }
+        }).start();
+        
+        // Setup channels tetap di sini (tidak masalah)
         methodChannel = new MethodChannel(binding.getBinaryMessenger(), METHOD_CHANNEL);
         methodChannel.setMethodCallHandler(this);
 
-        // Setup event channel for tag streaming
         eventChannel = new EventChannel(binding.getBinaryMessenger(), EVENT_CHANNEL);
         eventChannel.setStreamHandler(new EventChannel.StreamHandler() {
             @Override
@@ -72,7 +85,7 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
             }
         });
 
-        Log.d(TAG, "Plugin attached to engine");
+        Log.d(TAG, "Plugin channels attached to engine");
     }
 
     @Override
@@ -202,6 +215,10 @@ public class IdataRfidPlugin implements FlutterPlugin, MethodCallHandler {
                 if (isPoweredOn.get()) {
                     result.success(true);
                     return;
+                }
+
+                if (mainHandler == null) {
+                    mainHandler = new Handler(Looper.getMainLooper());
                 }
 
                 // Initialize UHFManager on main thread
